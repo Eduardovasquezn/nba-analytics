@@ -1,0 +1,311 @@
+---
+title: "Cluster"
+author: "Eduardo Vásquez Nolasco"
+date: "3/8/2020"
+output:
+  md_document:
+    variant: markdown_github
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/eduar/Google Drive (1)/Work/NBA/Data")
+library(stats)
+library(ggplot2)
+library(scales)
+library(parallel)
+library(readxl)
+library(purrr)
+library(dplyr)
+library(DT)
+library(tidyr)
+library(babynames)
+library(transformr)
+library(rlang)
+library(factoextra)
+library(NbClust)
+library(cluster)
+library(clValid)
+library(clustertend)
+library(gganimate)
+library(babynames)
+library(plotly)
+library(factoextra)
+library(NbClust)
+library(cluster)
+library(pgirmess)
+library(PMCMR)
+library(tseries)
+Data1.0<-read_excel("Seasons_Stats.xlsx", 
+                                  col_types = c("text", "text", "numeric", 
+                                                          "text", "numeric", "numeric", "numeric", 
+                                                          "numeric", "numeric", "numeric", 
+                                                          "numeric", "numeric", "numeric", 
+                                                          "numeric", "numeric", "numeric", 
+                                                          "numeric", "numeric", "numeric", 
+                                                          "numeric", "numeric", "numeric", 
+                                                          "numeric", "numeric", "numeric", 
+                                                          "numeric", "numeric", "numeric", 
+                                                          "numeric", "numeric", "numeric", 
+                                                          "numeric", "numeric", "numeric", 
+                                                          "numeric", "numeric", "numeric", 
+                                                          "numeric", "numeric", "numeric", 
+                                                          "numeric", "numeric", "numeric", 
+                                                          "numeric", "numeric", "numeric"), sheet = "Cluster")
+
+
+attach(Data1.0)
+Data1.0$Player<-gsub("*", "", Data1.0$Player, fixed=TRUE)
+Data1.0$Pos<-gsub("-.*$", "", Data1.0$Pos) 
+Data1.0$Pos<-ifelse(Data1.0$Pos=="F","PF",Data1.0$Pos)
+Data1.0$Pos<-ifelse(Data1.0$Pos=="G","SG",Data1.0$Pos)
+Data1.0$Pos <- factor(Data1.0$Pos, levels = c("C","PF","SF","SG","PG"))
+colnames(Data1.0)<-gsub("%", ".", colnames(Data1.0))
+Data2.0<-read_excel("Seasons_Stats.xlsx", sheet = "Team")
+
+```
+
+
+```{r, echo=FALSE, message=FALSE,warning=FALSE}
+# Organizing the data that is going to be use for the cluster.
+Data2020<-Data1.0 %>% 
+  group_by(Player) %>% 
+  filter(sum(G)>30) %>% 
+  mutate(FTPerc= (FT/FTA),
+         TwoPerc=(TwoP/TwoPA),
+         ThreePerc=(ThreePoint/ThreePA),
+         Name = paste(Player, Tm, sep = "-")) %>% 
+         na.omit() %>% 
+  as.data.frame()
+
+
+rownames(Data2020)<- Data2020$Name
+
+
+
+# Standardization  of the data base.
+Data2020z<-Data2020 %>% 
+  select(6:length(Data2020)-1) %>% 
+  scale(center = T,scale = T)
+ 
+
+set.seed(2) 
+# Tesintg if there are groups on the data. They don't follow a uniform spatial distribution, so we can make clusters.
+
+
+hopkins(data = Data2020z, n = nrow(Data2020z) - 1)
+
+
+# Optimal number of clusters
+fviz_nbclust(Data2020z, kmeans, method = "gap_stat")+ggtitle("Figure 1. Optimal number of clusters")+
+  theme_minimal()
+
+set.seed(2)
+
+# Clustering
+KmeanCluster <- kmeans(Data2020z, 8)
+ 
+
+# Size of each cluster 
+KmeanCluster$size
+
+clmethods <- c("kmeans")
+stab <- clValid(Data2020z, nClust = 2:8, clMethods = clmethods, 
+                validation = "stability")
+optimalScores(stab)
+
+# Name of the each cluster
+ClasifPlayers<- Data2020 %>% 
+  mutate(Cluster=KmeanCluster$cluster,
+         Role=case_when(Cluster==1~ "Bench 3&D",  
+                   Cluster==2 ~ "Non-elite big man",
+                   Cluster==3 ~ "Superstar",
+                   Cluster==4 ~ "Good defense",
+                   Cluster==5~ "Bench SG",
+                   Cluster==6~"All-Star",
+                   Cluster==7 ~ "Low performance",
+                   Cluster==8 ~ "Elite big man")) 
+
+ attach(Data2.0)
+
+
+# Name of team types
+ClasifTeams<- Data2.0 %>% 
+   mutate(Clasif=
+            case_when(W>=39~ "Title contender",
+                      W>=27 & W<39~"Playoff team",
+                      W>=20 & W<27~ "Average team",
+                      W<=27~"Worst teams")) 
+
+# Mergint the two datasets    
+Data2020FULL<-ClasifPlayers %>% 
+  left_join(.,ClasifTeams, by="Tm")
+
+
+
+
+# Ploting the clusters
+PrincipalComponentAnalysis <- prcomp(Data2020z)
+ggplotly(
+data.frame(pc_1 = PrincipalComponentAnalysis$x[,1], pc_2 = PrincipalComponentAnalysis$x[,2], 
+           Posic = Data2020$Pos) %>%
+  ggplot(aes(pc_1, pc_2, colour = Data2020FULL$Role,
+             text = paste('Player:', Data2020FULL$Player)))+
+  geom_point()+
+   labs(title = "Figure 2. K-means: Clustering NBA players. 2019-2020",
+       x = "PC1", y = "PC2",colour="Role")+theme_minimal() 
+
+  , tooltip = "text"
+)
+
+ 
+ Data2020FULL %>% 
+  group_by(Role) %>% 
+  summarise(PPG=round(mean(PTS),2),
+            RPG=round(mean(TRB),2),
+            APG=round(mean(AST),2),
+            PER=round(mean(PER),2),
+            "USG%"=round(mean(USG.),2),
+            WS=round(mean(WS),2),
+            BPM=round(mean(BPM),2),
+            VORP=round(mean(VORP),2),
+            "3P%"=round(mean(ThreePerc),2)) %>% 
+  arrange(desc(PPG)) %>% 
+datatable( class = 'cell-border stripe',
+  caption = 'Table 1: Average stats of NBA players by role in 2019-2020')
+
+
+ Data2020FULL %>% 
+  group_by(Role) %>% 
+  select(Name,PER,VORP,WS,BPM) %>% 
+  arrange(desc(PER))  %>% 
+datatable( class = 'cell-border stripe',
+           colnames = c('Player-Team' = 'Name'),
+  caption = 'Table 2: Stats of NBA players role in 2019-2020')
+
+ 
+ 
+ 
+TeamComparison<-Data2020FULL %>% 
+  group_by(Clasif,Role) %>% 
+  summarise(n=n()) %>% 
+  filter(Clasif=="Title contender" | Clasif=="Playoff team") %>% 
+  mutate(Proporcion=n/sum(n)*100)  
+   
+ 
+
+Fig3<-ggplotly(
+  ggplot(TeamComparison,aes(reorder(TeamComparison$Role,-TeamComparison$Proporcion), y = round(TeamComparison$Proporcion,2), fill=TeamComparison$Clasif,
+                            text = paste('Type:', Clasif,
+                                         '<br>Proportion:', round(Proporcion,2)))) +
+    geom_bar(stat = "identity", position = "dodge",width=0.6,size=1)+
+    labs(title = "Figure 3. Title contender and playoff teams structure. 2019-2020", x = "", y = "Percent") +
+    scale_fill_manual(values=c("midnightblue", "mediumvioletred" ))+
+    guides(fill = F)+
+    theme_minimal()+
+    scale_y_continuous(limits = c(0, 30)) , tooltip = "text") %>% 
+ layout(xaxis = list(title = "", tickangle = 15))
+   
+Fig3<-Fig3 %>% layout(xaxis = list( tickangle = 45) )
+Fig3 
+
+
+ Data2020FULL %>% 
+  group_by(Clasif) %>% 
+  summarise(p=round(mean(WS),2)) %>% 
+  arrange(desc(p))  %>% 
+   filter(Clasif!="NA") %>% 
+datatable( class = 'cell-border stripe',
+         colnames = c('Win share' = 'p'),
+  caption = 'Table 3: Average Win share by types of team in 2019-2020')
+ 
+ 
+# Comparison of groups 
+ 
+Title<- ggplotly(
+ Data2020FULL %>% 
+  group_by(Clasif) %>% 
+    filter(Clasif=="Title contender") %>% 
+   ggplot(aes(WS))+geom_density(colour="#1F3552",
+                  fill="#4271AE",
+                  alpha = .1) +
+     geom_vline( aes(xintercept=mean(WS)),
+                 linetype="dashed",size=.5)+
+   theme_minimal()
+ )
+ 
+Playoff<- ggplotly(
+ Data2020FULL %>% 
+  group_by(Clasif) %>% 
+    filter(Clasif=="Playoff team") %>% 
+   ggplot(aes(WS))+geom_density(colour="#1F3552",
+                  fill="#4271AE",
+                  alpha = .1) +
+     geom_vline( aes(xintercept=mean(WS)),
+                 linetype="dashed",size=.5)+
+   theme_minimal()+
+     ggtitle("Figure 4. Kernel density of Win Share by team categories in 2019-2020")
+ ) 
+
+Average<- ggplotly(
+ Data2020FULL %>% 
+  group_by(Clasif) %>% 
+    filter(Clasif=="Average team") %>% 
+   ggplot(aes(WS))+geom_density(colour="#1F3552",
+                  fill="#4271AE",
+                  alpha = .1) +
+     geom_vline( aes(xintercept=mean(WS)),
+                 linetype="dashed",size=.5)+
+   theme_minimal()
+ )
+ 
+Worst<- ggplotly(
+ Data2020FULL %>% 
+  group_by(Clasif) %>% 
+    filter(Clasif=="Worst teams") %>% 
+   ggplot(aes(WS))+geom_density(colour="#1F3552",
+                  fill="#4271AE",
+                  alpha = .1) +
+     geom_vline( aes(xintercept=mean(WS)),
+                 linetype="dashed",size=.5)+
+   theme_minimal()
+ )
+
+fig <- subplot(Title, Playoff,Average,Worst) %>% 
+     layout( 
+       xaxis = list(title="Title contender"),
+       xaxis2 = list(title="Playoff team"),
+       xaxis3 = list(title="Average team"),
+       xaxis4 = list(title="Worst teams")
+     )
+
+fig
+
+# Test of normality
+jarque.bera.test(WS)
+
+# Non parametric tests
+ Inference<-Data2020FULL %>% 
+  group_by(Clasif) %>% 
+   filter(Clasif!="NA") %>% 
+   select(WS)  
+ 
+ 
+kruskal.test(Inference$Clasif~Inference$WS) 
+
+ kruskalmc(Inference$WS, Inference$Clasif)$dif.com %>% 
+  datatable( class = 'cell-border stripe',
+                        colnames = c('Obs. dif.' = 'obs.dif',
+                                     'Critical dif.' = 'critical.dif',
+                                     'Difference' = 'difference'),
+  caption = 'Table 4: Kruskal-Wallis post hoc test') %>% 
+     formatRound('Obs. dif.', 2)  %>% 
+   formatRound('Critical dif.', 2) 
+ 
+ 
+
+```
+
+
