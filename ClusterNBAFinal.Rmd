@@ -11,7 +11,6 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-setwd("C:/Users/eduar/Google Drive (1)/Work/NBA/Data")
 library(stats)
 library(ggplot2)
 library(scales)
